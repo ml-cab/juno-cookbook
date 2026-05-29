@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>cab.ml</groupId>
+	<artifactId>juno-cookbook</artifactId>
+	<version>0.1.0</version>
+	<name>Juno Cookbook</name>
+	<packaging>jar</packaging>
+
+	<description>
+		jUno local in-process inference example.
+		No external server needed — the model runs inside the same JVM.
+		Requires a GGUF model file; point the test at one via:
+		mvn test -Djuno.test.model=/path/to/model.gguf
+	</description>
+
+	<properties>
+		<java.version>25</java.version>
+		<maven.compiler.release>25</maven.compiler.release>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<juno.version>0.1.0-RC</juno.version>
+		<junit.version>5.10.2</junit.version>
+		<assertj.version>3.26.0</assertj.version>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>cab.ml</groupId>
+				<artifactId>juno-bom</artifactId>
+				<version>${juno.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<dependencies>
+		<!--
+            juno-player: contains all in-process inference wiring —
+            ForwardPassHandlerLoader, LocalInferencePipeline, GenerationLoop,
+            ChatHistory, ChatModelType, JunoPlayer, etc.
+        -->
+		<dependency>
+			<groupId>cab.ml</groupId>
+			<artifactId>juno-player</artifactId>
+		</dependency>
+		<!--
+            tokenizer: ChatMessage record (role + content).
+        -->
+		<dependency>
+			<groupId>cab.ml</groupId>
+			<artifactId>tokenizer</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.13.0</version>
+				<configuration>
+					<release>${maven.compiler.release}</release>
+					<compilerArgs>
+						<arg>--enable-preview</arg>
+					</compilerArgs>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.3.0</version>
+				<configuration>
+					<!-- Forward the model path system property into the forked
+					test JVM -->
+					<systemPropertyVariables>
+						<juno.test.model>${juno.test.model}</juno.test.model>
+					</systemPropertyVariables>
+					<argLine>--enable-preview</argLine>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>
