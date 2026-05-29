@@ -56,7 +56,14 @@
 			<groupId>cab.ml</groupId>
 			<artifactId>tokenizer</artifactId>
 		</dependency>
-
+		<dependency>
+			<groupId>cab.ml</groupId>
+			<artifactId>sampler</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>cab.ml</groupId>
+			<artifactId>coordinator</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter</artifactId>

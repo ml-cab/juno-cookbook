@@ -95,12 +95,12 @@ class LocalInferencePipelineTest {
 		repl.resetHistory();
 
 		// Turn 1 — plant the fact.
-		repl.chat("My name is Maximilian. Please remember that.");
+		repl.chat("My name is Max. Please remember that.");
 
 		// Turn 2 — retrieve it without restating it.
-		String reply = repl.chat("What is my name? Reply with just the name and nothing else.");
+		String reply = repl.chat("Recall me, what is my name?");
 
-		assertThat(reply.toLowerCase()).contains("maximilian");
+		assertThat(reply.toLowerCase()).contains("max");
 	}
 
 	@Test

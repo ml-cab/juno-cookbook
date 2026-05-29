@@ -144,21 +144,22 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 	 * }</pre>
 	 */
 	public void runInteractive(InputStream in, PrintStream out) {
-		Scanner scanner = new Scanner(in);
-		out.println("jUno ready. Type your message, or 'exit' to quit.");
-		while (scanner.hasNextLine()) {
-			String line = scanner.nextLine().strip();
-			if (line.isEmpty()) {
-				continue;
+		try (Scanner scanner = new Scanner(in)) {
+			out.println("jUno ready. Type your message, or 'exit' to quit.");
+			while (scanner.hasNextLine()) {
+				String line = scanner.nextLine().strip();
+				if (line.isEmpty()) {
+					continue;
+				}
+				if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("quit")) {
+					break;
+				}
+				out.print("you> ");
+				out.println(line);
+				out.print("bot> ");
+				out.flush();
+				out.println(chat(line));
 			}
-			if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("quit")) {
-				break;
-			}
-			out.print("you> ");
-			out.println(line);
-			out.print("bot> ");
-			out.flush();
-			out.println(chat(line));
 		}
 	}
 
