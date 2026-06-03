@@ -76,7 +76,7 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-
+<!--
 	<build>
 		<plugins>
 			<plugin>
@@ -86,7 +86,7 @@
 				<configuration>
 					<release>${maven.compiler.release}</release>
 					<compilerArgs>
-						<arg>--enable-preview</arg>
+						<arg>enable-preview</arg>
 					</compilerArgs>
 				</configuration>
 			</plugin>
@@ -95,14 +95,12 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<version>3.3.0</version>
 				<configuration>
-					<!-- Forward the model path system property into the forked
-					test JVM -->
 					<systemPropertyVariables>
 						<juno.test.model>${juno.test.model}</juno.test.model>
 					</systemPropertyVariables>
-					<argLine>--enable-preview</argLine>
+					<argLine>enable-preview</argLine>
 				</configuration>
 			</plugin>
 		</plugins>
-	</build>
+	</build> -->
 </project>

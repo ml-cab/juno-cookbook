@@ -24,6 +24,7 @@ import cab.ml.juno.node.GgufReader;
 import cab.ml.juno.node.GpuContext;
 import cab.ml.juno.node.LlamaConfig;
 import cab.ml.juno.node.LocalInferencePipeline;
+import cab.ml.juno.node.MatVec;
 import cab.ml.juno.node.ShardContext;
 import cab.ml.juno.player.ChatHistory;
 import cab.ml.juno.player.ChatModelType;
@@ -33,6 +34,7 @@ import cab.ml.juno.registry.ShardMap;
 import cab.ml.juno.registry.ShardPlanner;
 import cab.ml.juno.sampler.Sampler;
 import cab.ml.juno.sampler.SamplingParams;
+import cab.ml.juno.tokenizer.ChatMessage;
 import cab.ml.juno.tokenizer.GgufTokenizer;
 import cab.ml.juno.tokenizer.Tokenizer;
 
@@ -47,38 +49,47 @@ import cab.ml.juno.tokenizer.Tokenizer;
  *
  * <p>
  * Usage:
- * 
+ *
  * <pre>{@code
- * try (LocalInferencePipelineExample repl = LocalInferencePipelineExample.builder(Path.of("/path/to/model.gguf")).build()) {
- * 	String reply = repl.chat("What is 2 + 2?");
- * 	System.out.println(reply);
+ * try (LocalChat repl = LocalChat.builder(Path.of("/path/to/model.gguf")).build()) {
+ *     String reply = repl.chat("What is 2 + 2?");
+ *     System.out.println(reply);
  * }
  * }</pre>
  *
  * <p>
  * For an interactive terminal session backed by the same model:
- * 
+ *
  * <pre>{@code
  * repl.runInteractive(System.in, System.out);
  * }</pre>
  */
-public final class LocalInferencePipelineExample implements AutoCloseable {
+public final class LocalChat implements AutoCloseable {
+
+	/**
+	 * Default system prompt prepended to every request. Guides instruction-tuned
+	 * models (e.g. TinyLlama-Chat) to maintain conversation context across turns.
+	 */
+	static final String DEFAULT_SYSTEM_PROMPT =
+			"You are a helpful assistant. Remember everything the user tells you and refer back to it accurately.";
 
 	private final GenerationLoop loop;
 	private final String modelType;
 	private final SamplingParams samplingParams;
 	private final List<ForwardPassHandler> handlers;
 	private final GpuContext gpuContext;
+	private final String systemPrompt;
 
 	private ChatHistory history;
 
-	private LocalInferencePipelineExample(GenerationLoop loop, String modelType, SamplingParams samplingParams,
-			List<ForwardPassHandler> handlers, GpuContext gpuContext) {
+	private LocalChat(GenerationLoop loop, String modelType, SamplingParams samplingParams,
+			List<ForwardPassHandler> handlers, GpuContext gpuContext, String systemPrompt) {
 		this.loop = loop;
 		this.modelType = modelType;
 		this.samplingParams = samplingParams;
 		this.handlers = handlers;
 		this.gpuContext = gpuContext;
+		this.systemPrompt = systemPrompt;
 		this.history = new ChatHistory();
 	}
 
@@ -99,8 +110,8 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 			throw new IllegalArgumentException("userText must not be blank");
 		}
 		history.addUser(userText);
-		InferenceRequest request = InferenceRequest.ofSession(history.sessionId(), modelType, history.getMessages(),
-				samplingParams, RequestPriority.NORMAL);
+		InferenceRequest request = InferenceRequest.ofSession(
+				history.sessionId(), modelType, buildMessages(), samplingParams, RequestPriority.NORMAL);
 		GenerationResult result = loop.generate(request, TokenConsumer.discard());
 		history.addAssistant(result.text());
 		return result.text();
@@ -126,7 +137,7 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 	/**
 	 * Returns an unmodifiable snapshot of the current message history.
 	 */
-	public List<cab.ml.juno.tokenizer.ChatMessage> history() {
+	public List<ChatMessage> history() {
 		return history.getMessages();
 	}
 
@@ -138,7 +149,7 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 	 *
 	 * <p>
 	 * For a standard terminal:
-	 * 
+	 *
 	 * <pre>{@code
 	 * repl.runInteractive(System.in, System.out);
 	 * }</pre>
@@ -178,6 +189,22 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Builds the message list for the current request. Prepends the system prompt
+	 * when one is configured, so it is present on every turn without being stored
+	 * in ChatHistory (which only tracks user/assistant turns).
+	 */
+	private List<ChatMessage> buildMessages() {
+		List<ChatMessage> turns = history.getMessages();
+		if (systemPrompt == null || systemPrompt.isBlank()) {
+			return turns;
+		}
+		List<ChatMessage> messages = new ArrayList<>(turns.size() + 1);
+		messages.add(ChatMessage.system(systemPrompt));
+		messages.addAll(turns);
+		return List.copyOf(messages);
+	}
+
 	// ── Builder ───────────────────────────────────────────────────────────────
 
 	public static Builder builder(Path modelPath) {
@@ -190,6 +217,7 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 		private int nodeCount = 3;
 		private boolean useGpu = true;
 		private SamplingParams samplingParams = SamplingParams.defaults();
+		private String systemPrompt = DEFAULT_SYSTEM_PROMPT;
 
 		private Builder(Path modelPath) {
 			if (modelPath == null) {
@@ -225,11 +253,20 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 		}
 
 		/**
+		 * Override the system prompt injected at the start of every request. Pass
+		 * {@code null} or blank to disable the system prompt.
+		 */
+		public Builder systemPrompt(String systemPrompt) {
+			this.systemPrompt = systemPrompt;
+			return this;
+		}
+
+		/**
 		 * Loads the GGUF model and wires the local inference pipeline.
 		 *
 		 * @throws IOException if the model file cannot be read
 		 */
-		public LocalInferencePipelineExample build() throws IOException {
+		public LocalChat build() throws IOException {
 			System.setProperty("juno.byteOrder", "BE");
 
 			LlamaConfig config;
@@ -251,7 +288,7 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 			ShardMap shardMap = ShardPlanner.create().plan("model", config.numLayers(), vramPerLayerBytes, nodes);
 
 			GpuContext gpuCtx = resolveGpuContext(useGpu);
-			cab.ml.juno.node.MatVec sharedBackend = (gpuCtx != null) ? gpuCtx.createMatVec()
+			MatVec sharedBackend = (gpuCtx != null) ? gpuCtx.createMatVec()
 					: ForwardPassHandlerLoader.selectBackend();
 
 			List<ForwardPassHandler> handlers = new ArrayList<>();
@@ -270,7 +307,7 @@ public final class LocalInferencePipelineExample implements AutoCloseable {
 
 			String modelType = ChatModelType.fromPath(modelPath.toString());
 
-			return new LocalInferencePipelineExample(loop, modelType, samplingParams, List.copyOf(handlers), gpuCtx);
+			return new LocalChat(loop, modelType, samplingParams, List.copyOf(handlers), gpuCtx, systemPrompt);
 		}
 
 		private static long estimateVramPerLayer(int hiddenDim) {
