@@ -17,6 +17,7 @@ import cab.ml.juno.coordinator.TokenConsumer;
 import cab.ml.juno.kvcache.CpuKVCache;
 import cab.ml.juno.kvcache.GpuKVCache;
 import cab.ml.juno.kvcache.KVCacheManager;
+import cab.ml.juno.lora.LoraAdapterSet;
 import cab.ml.juno.node.CudaAvailability;
 import cab.ml.juno.node.ForwardPassHandler;
 import cab.ml.juno.node.ForwardPassHandlerLoader;
@@ -62,6 +63,18 @@ import cab.ml.juno.tokenizer.Tokenizer;
  *
  * <pre>{@code
  * repl.runInteractive(System.in, System.out);
+ * }</pre>
+ *
+ * <p>
+ * To apply a trained LoRA adapter at inference time (equivalent to
+ * {@code ./juno local --lora-play model.lora}):
+ *
+ * <pre>{@code
+ * try (LocalChat repl = LocalChat.builder(Path.of("/path/to/model.gguf"))
+ *         .loraPlay(Path.of("/path/to/model.lora"))
+ *         .build()) {
+ *     String reply = repl.chat("What is my name?");
+ * }
  * }</pre>
  */
 public final class LocalChat implements AutoCloseable {
@@ -218,6 +231,7 @@ public final class LocalChat implements AutoCloseable {
 		private boolean useGpu = true;
 		private SamplingParams samplingParams = SamplingParams.defaults();
 		private String systemPrompt = DEFAULT_SYSTEM_PROMPT;
+		private Path loraPlayPath = null;
 
 		private Builder(Path modelPath) {
 			if (modelPath == null) {
@@ -262,6 +276,25 @@ public final class LocalChat implements AutoCloseable {
 		}
 
 		/**
+		 * Apply a trained LoRA adapter at inference time (equivalent to
+		 * {@code ./juno local --lora-play <path>}).
+		 *
+		 * <p>
+		 * The adapter file must have been produced by
+		 * {@link cab.ml.juno.player.LoraTrainer#save()} or the {@code /save} REPL
+		 * command. When set, the pipeline is routed through
+		 * {@link cab.ml.juno.node.LoraTrainableHandler} in inference-only mode (no
+		 * optimizer attached).
+		 *
+		 * @param loraPath path to the {@code .lora} checkpoint file; {@code null}
+		 *                 disables LoRA (base model only)
+		 */
+		public Builder loraPlay(Path loraPath) {
+			this.loraPlayPath = loraPath;
+			return this;
+		}
+
+		/**
 		 * Loads the GGUF model and wires the local inference pipeline.
 		 *
 		 * @throws IOException if the model file cannot be read
@@ -291,11 +324,13 @@ public final class LocalChat implements AutoCloseable {
 			MatVec sharedBackend = (gpuCtx != null) ? gpuCtx.createMatVec()
 					: ForwardPassHandlerLoader.selectBackend();
 
+			LoraAdapterSet adapters = loadAdapters(loraPlayPath);
+
 			List<ForwardPassHandler> handlers = new ArrayList<>();
 			for (var assignment : shardMap.assignments()) {
 				ShardContext ctx = ShardContext.from(assignment, config.vocabSize(), config.hiddenDim(),
 						config.numHeads());
-				handlers.add(ForwardPassHandlerLoader.load(modelPath, ctx, sharedBackend, null));
+				handlers.add(ForwardPassHandlerLoader.load(modelPath, ctx, sharedBackend, adapters));
 			}
 
 			LocalInferencePipeline pipeline = LocalInferencePipeline.from(shardMap, new ArrayList<>(handlers),
@@ -308,6 +343,13 @@ public final class LocalChat implements AutoCloseable {
 			String modelType = ChatModelType.fromPath(modelPath.toString());
 
 			return new LocalChat(loop, modelType, samplingParams, List.copyOf(handlers), gpuCtx, systemPrompt);
+		}
+
+		private static LoraAdapterSet loadAdapters(Path loraPath) throws IOException {
+			if (loraPath == null) {
+				return null;
+			}
+			return LoraAdapterSet.load(loraPath);
 		}
 
 		private static long estimateVramPerLayer(int hiddenDim) {

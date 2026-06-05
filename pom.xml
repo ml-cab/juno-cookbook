@@ -11,7 +11,7 @@
 	<packaging>jar</packaging>
 
 	<description>
-		jUno local in-process inference example.
+		Juno local in-process inference example.
 		No external server needed — the model runs inside the same JVM.
 		Requires a GGUF model file; point the test at one via:
 		mvn test -Djuno.test.model=/path/to/model.gguf
